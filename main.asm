@@ -1,22 +1,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 	Dylan Campbell
-;;
-;;
-;;
-;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;      Some of the code in this file comes from Gustavo Pezzi's "Atari 2600 
+;;      Programming with 6502 Assembly" course, found here: 
+;;      https://pikuma.com/courses
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 
 
-
-
-
-
-
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	Initialize dasm, include files for register memory mapping and macros
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -42,6 +34,11 @@ P0XPos         	byte       	; player0 x-position
 P0YPos         	byte        	; player0 y-position
 P1XPos         	byte        	; player1 x-position
 P1YPos         	byte        	; player1 y-position
+
+P0XMoveFlag     byte            ; flag set if P0 horizontal movement occurred
+P0YMoveFlag     byte            ; flag set if P0 vertical movement occurred
+P1XMoveFlag     byte            ; flag set if P1 horizontal movement occurred
+P1YMoveFlag     byte            ; flag set if P1 vertical movement occurred
 
 P0tempXPos	byte		; used for collision - to return to previous
 P0tempYPos	byte		; used for collision - to return to previous
@@ -127,19 +124,12 @@ Reset:
         sta P0Damage
         sta P1Damage		; P0, P1 start with no damage
         
-      
-      
-      
-      
-      
-      
-      
-      
-      
+
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	Rendering
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 StartFrame:
     	lda P0XPos
@@ -187,7 +177,7 @@ GameVisibleLine:
 	sta PF1
 	lda (PF2Ptr),Y
 	sta PF2
-.AreWeInsideJetSprite:
+.AreWeInsideP0Sprite:
     	txa                   	; transfer X to A
     	sec                   	; make sure carry flag is set before subtraction
     	sbc P0YPos           	; subtract sprite Y-coordinate
@@ -201,7 +191,7 @@ GameVisibleLine:
     	sta GRP0              	; set graphics for player0
     	lda (P0ColorPtr),Y   	; load player color from lookup table
     	sta COLUP0            	; set color of player 0
-.AreWeInsideBomberSprite:
+.AreWeInsideP1Sprite:
     	txa                  	; transfer X to A
     	sec                 	; make sure carry flag is set before subtraction
     	sbc P1YPos           	; subtract sprite Y-coordinate
@@ -276,9 +266,9 @@ CheckCollisionP0P1:
         
 CheckCollisionP0PF:
 	lda #%10000000		; CXP0FB bit 7 detects P0 and PF collision
-        bit CXP0FB		; check CSP0FB bit 7 with the above pattern
+        bit CXP0FB		; check CXP0FB bit 7 with the above pattern
         bne .CollisionP0PF	; collision between P0 - PF happened
-        jmp EndCollisionCheck	; skip to end of collision detection
+        jmp CheckCollisionP1PF	; skip to end of collision detection
 .CollisionP0PF
 	lda P0tempXPos
         sta P0XPos
@@ -286,8 +276,8 @@ CheckCollisionP0PF:
         sta P0YPos
         
 CheckCollisionP1PF:
-	lda #%10000000		; CXP0FB bit 7 detects P0 and PF collision
-        bit CXP1FB		; check CSP1FB bit 7 with the above pattern
+	lda #%10000000		; CXP1FB bit 7 detects P1 and PF collision
+        bit CXP1FB		; check CXP1FB bit 7 with the above pattern
         bne .CollisionP1PF	; collision between P1  - PF happened
         jmp EndCollisionCheck	; skip to end of collision detection
 .CollisionP1PF
@@ -303,19 +293,26 @@ EndCollisionCheck		; fallback
 ;; 	Process joystick input for player0
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ProcessJoystickP0:
-        lda SWCHA       ; reads joystick positions
+        lda SWCHA       ; reads joystick positions, Bits 4-7 for player 1
 PJloopP0:    
+        ldy #0
+        sty P0XMoveFlag ; 0 = P0 stationary, 1 = P0 moved horizontally
+        sty P0YMoveFlag ; 0 = P0 stationary, 1 = P0 moved vertically
         ldy P0XPos   	; save original X location so the player can be
         sty P0tempXPos 	;   bounced back upon colliding with the playfield
         ldy P0YPos   	; save original Y location so the player can be
         sty P0tempYPos  ;   bounced back upon colliding with the playfield
+
+CheckRightP0:
         asl             ; shift A bits left, R is now in the carry bit
         bcs CheckLeftP0	; branch if joystick is not held right
+        ldy #1
+        sty P0XMoveFlag ; indicate horizontal move occurred
         ldy P0XPos   	; get the object's X position
         iny             ; and move it right
         cpy #144        ; test for edge of screen
         bne SaveXP0    	; save Y if we're not at the edge
-	jsr GameOver	; ********************************************
+	jsr GameOver	; reached right edge of screen
 SaveXP0:  
 	sty P0XPos   	; saveX
         ldy #0      	; turn off reflect of player, which
@@ -324,13 +321,15 @@ SaveXP0:
 CheckLeftP0:
         asl             ; shift A bits left, L is now in the carry bit
         bcs CheckDownP0 ; branch if joystick not held left
+        ldy #1
+        sty P0XMoveFlag ; indicate horizontal move occurred
         ldy P0XPos  	; get the object's X position
         dey             ; and move it left
         cpy #255  
         ; test for edge of screen
         bne SaveX2P0    ; save X if we're not at the edge
         ldy #159
-	jsr GameOver	; ********************************************
+	jsr GameOver	; reached left edge of screen
 SaveX2P0: 
 	sty P0XPos	; save X
         ldy #8          ; turn on reflect of player, which
@@ -339,43 +338,83 @@ SaveX2P0:
 CheckDownP0:
         asl                     ; shift A bits left, D is now in the carry bit
         bcs CheckUpP0           ; branch if joystick not held down
+        ldy #1
+        sty P0YMoveFlag         ; indicate vertical move occurred
         ldy P0YPos              ; get the object's Y position
         dey                     ; move it down
         cpy #255                ; test for bottom of screen
         bne SaveYP0             ; save Y if we're not at the bottom
-        jsr GameOver		; ********************************************
+        jsr GameOver		; reached bottom edge of screen
 SaveYP0:  
 	sty P0YPos              ; save Y
 
 CheckUpP0:
         asl                     ; shift A bits left, U is now in the carry bit
-        bcs EndJoystickP0       ; branch if joystick not held up
+        bcs CheckIfP0Running    ; branch if joystick not held up
+        ldy #1
+        sty P0YMoveFlag         ; indicate vertical move occurred
         ldy P0YPos              ; get the object's Y position
         iny                     ; move it up
         cpy #ARENA_HEIGHT       ; test for top of screen
         bne SaveY2P0            ; save Y if we're not at the top
-        jsr GameOver		; ********************************************
+        jsr GameOver		; reached top edge of screen
 SaveY2P0: 
 	sty P0YPos              ; save Y
-EndJoystickP0:
+
+CheckIfP0Running:
+        ldy P0XMoveFlag         ; loading to y will set/clear zero (Z) flag
+        beq CheckIfP0Jumping    ; if zero flag set, no left/right movement
+        lda #<P0SpriteRun       ; if moved, set P0 sprite to running bitmap
+   	sta P0SpritePtr         
+   	lda #>P0SpriteRun
+   	sta P0SpritePtr+1  
+        jmp EndP0Joystick       ; do not set P0 sprite back to default
+
+CheckIfP0Jumping:
+        ldy P0YMoveFlag         ; loading to y will set/clear zero (Z) flag
+        beq SetP0SpriteDefault  ; if zero flag set, no up/down movement
+        lda #<P0SpriteJump       ; if moved, set P0 sprite to jumping bitmap
+   	sta P0SpritePtr         
+   	lda #>P0SpriteJump
+   	sta P0SpritePtr+1  
+        jmp EndP0Joystick       ; do not set P0 sprite back to default
+
+SetP0SpriteDefault:
+        lda #<P0Sprite          ; set P0 sprite to default bitmap
+   	sta P0SpritePtr         
+   	lda #>P0Sprite
+   	sta P0SpritePtr+1 
+
+EndP0Joystick:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	Process joystick input for player1
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ProcessJoystickP1:
-        lda SWCHB       ; reads joystick positions
+        lda SWCHA       ; reads joystick positions, Bits 0-3 for player 2
 PJloopP1:    
+        ldy #0
+        sty P1XMoveFlag ; 0 = P1 stationary, 1 = P1 moved horizontally
+        sty P1YMoveFlag ; 0 = P1 stationary, 1 = P1 moved vertically
         ldy P1XPos   	; save original X location so the player can be
         sty P1tempXPos 	;   bounced back upon colliding with the playfield
         ldy P1YPos   	; save original Y location so the player can be
         sty P1tempYPos 	;   bounced back upon colliding with the playfield
+        asl             ; bits 4-7 are for player 1, 
+        asl             ;   need to shift left 4 bits to get to player 2 input
+        asl
+        asl
+
+CheckRightP1:
         asl             ; shift A bits left, R is now in the carry bit
-        bcs CheckLeftP1 ; branch if joystick is not held right
+        bcs CheckLeftP1 ; branch if joystick is not held right 
+        ldy #1
+        sty P1XMoveFlag ; indicate horizontal move occurred
         ldy P1XPos	; get the object's X position
         iny             ; and move it right
         cpy #144        ; test for edge of screen
         bne SaveXP1     ; save Y if we're not at the edge
-	jsr GameOver	; ********************************************
+	jsr GameOver	; reached right edge of screen
 SaveXP1:  
 	sty P1XPos	; saveX
         ldy #8          ; turn off reflect of player, which
@@ -384,11 +423,13 @@ SaveXP1:
 CheckLeftP1:
         asl             ; shift A bits left, L is now in the carry bit
         bcs CheckDownP1 ; branch if joystick not held left
+        ldy #1
+        sty P1XMoveFlag ; indicate horizontal move occurred
         ldy P1XPos      ; get the object's X position
         dey             ; and move it left
         cpy #0       	; test for edge of screen
         bne SaveX2P1    ; save X if we're not at the edge
-	jsr GameOver	; ********************************************
+	jsr GameOver	; reached left edge of screen
 SaveX2P1: 
 	sty P1XPos      ; save X
         ldy #0          ; turn on reflect of player, which
@@ -397,25 +438,55 @@ SaveX2P1:
 CheckDownP1:
         asl                     ; shift A bits left, D is now in the carry bit
         bcs CheckUpP1           ; branch if joystick not held down
+        ldy #1
+        sty P1YMoveFlag         ; indicate vertical move occurred
         ldy P1YPos              ; get the object's Y position
         dey                     ; move it down
         cpy #255                ; test for bottom of screen
         bne SaveYP1             ; save Y if we're not at the bottom
-	jsr GameOver		; ********************************************
+	jsr GameOver		; reached bottom edge of screen
 SaveYP1:  
 	sty P1YPos              ; save Y
 
 CheckUpP1:
         asl                     ; shift A bits left, U is now in the carry bit
-        bcs EndJoystickP1       ; branch if joystick not held up
+        bcs CheckIfP1Running    ; branch if joystick not held up
+        ldy #1
+        sty P1YMoveFlag         ; indicate vertical move occurred
         ldy P1YPos              ; get the object's Y position
         iny                     ; move it up
         cpy #ARENA_HEIGHT       ; test for top of screen
         bne SaveY2P1            ; save Y if we're not at the top
-	jsr GameOver		; ********************************************
+	jsr GameOver		; reached top edge of screen
 SaveY2P1: 
 	sty P1YPos              ; save Y
-EndJoystickP1:
+
+CheckIfP1Running:
+        ldy P1XMoveFlag         ; loading to y will set/clear zero (Z) flag
+        beq CheckIfP1Jumping    ; if zero flag set, no left/right movement
+        lda #<P1SpriteRun       ; if moved, set P1 sprite to running bitmap
+   	sta P1SpritePtr         
+   	lda #>P1SpriteRun
+   	sta P1SpritePtr+1  
+        jmp EndP1Joystick       ; do not set P1 sprite back to default
+
+CheckIfP1Jumping:
+        ldy P1YMoveFlag         ; loading to y will set/clear zero (Z) flag
+        beq SetP1SpriteDefault  ; if zero flag set, no up/down movement
+        lda #<P1SpriteJump      ; if moved, set P1 sprite to jumping bitmap
+   	sta P1SpritePtr         
+   	lda #>P1SpriteJump
+   	sta P1SpritePtr+1  
+        jmp EndP1Joystick       ; do not set P1 sprite back to default
+
+SetP1SpriteDefault:
+        lda #<P1Sprite          ; set P1 sprite to default bitmap
+   	sta P1SpritePtr         
+   	lda #>P1Sprite
+   	sta P1SpritePtr+1 
+
+EndP1Joystick:
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	Loop back to start a brand new frame
@@ -425,16 +496,9 @@ EndJoystickP1:
 
 
 
-
-
-
-
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	Subroutines
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; 	Horizontal Movement subroutine
 ;	A is the target x-coordinate position in pixels of our object
@@ -459,23 +523,13 @@ SetObjectXPos subroutine
 ;; 	Scoreboard Digits subroutine
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 CalcDigitOffset subroutine
-	
-
 	rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	Game Over subroutine
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 GameOver subroutine
-	lda #$30
-        sta COLUBK
 	rts
-
-
-
-
-
-
 
 
 
@@ -483,7 +537,6 @@ GameOver subroutine
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	ROM Bitmaps - lookup tables
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	Playfield bitmaps (PF1 values, PF2 values)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -677,9 +730,51 @@ PF2Data:
         .byte #$00		; line 1 (top of screen, first rendered)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 	P0 Bitmap - Stationary
+;; 	P0 Bitmap - Stationary (comment drawing flipped horizontally)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 P0Sprite:
+        .byte #%00000000
+    	.byte #%00111010        ; x  xx
+    	.byte #%01111110        ; x  x
+    	.byte #%11011110        ; xxxx
+    	.byte #%11001111        ; x x   xx
+    	.byte #%11000101        ; xxxx  xx
+    	.byte #%00001111        ;  xxxx xx
+    	.byte #%00001001        ;  xxxxxx
+    	.byte #%00011001        ;  x xxx
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 	P0 Bitmap - Running (comment drawing flipped horizontally)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+P0SpriteRun:
+    	.byte #%00000000
+        .byte #%00110001        ; xx xx
+    	.byte #%00111111        ; x  x
+    	.byte #%01111110        ; xxxx
+    	.byte #%11001111        ; x x   xx
+    	.byte #%11000101        ; xxxx  xx
+    	.byte #%00001111        ;  xxxxxx
+    	.byte #%00001001        ; xxxxxx
+    	.byte #%00011011        ; x   xx
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 	P0 Bitmap - Jumping
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+P0SpriteJump:
+    	.byte #%00000000
+        .byte #%01101100        ;   x x  
+    	.byte #%00111110        ;   x x   
+    	.byte #%01111101        ;   xxx  
+    	.byte #%00111001        ;   x x  x 
+    	.byte #%00101001        ;   xxx  x 
+    	.byte #%00111000        ;  xxxxx x
+    	.byte #%00101000        ;   xxxxx
+    	.byte #%00101000        ;  xx xx
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 	P1 Bitmap - Stationary
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+P1Sprite:
     	.byte #%00000000        ;
     	.byte #%01101100        ;
     	.byte #%00111000        ;   xxx
@@ -691,97 +786,86 @@ P0Sprite:
     	.byte #%00000000        ;  xx xx
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 	P0 Bitmap - Running
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-P0SpriteRun:
-    	.byte #%00000000        ;
-    	.byte #%00110110        ;
-    	.byte #%00011100        ;    xxx
-    	.byte #%00111110        ;   xxxxx
-    	.byte #%01111111        ;  xxx x x
-    	.byte #%01110101        ;  xxxxxxx
-    	.byte #%00111110        ;   xxxxx
-    	.byte #%00011100        ;    xxx
-    	.byte #%00000000        ;   xx xx
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 	P1 Bitmap - Stationary
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-P1Sprite:
-    	.byte #%00000000
-    	.byte #%01011100        ; x  xx
-    	.byte #%01111110        ; x  x
-    	.byte #%01111011        ; xxxx
-    	.byte #%11110011        ; x x   xx
-    	.byte #%10100011        ; xxxx  xx
-    	.byte #%11110000        ;  xxxx xx
-    	.byte #%10010000        ;  xxxxxx
-    	.byte #%10011000        ;  x xxx
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	P1 Bitmap - Running
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 P1SpriteRun:
-    	.byte #%00000000
-    	.byte #%10001100        ; xx xx
-    	.byte #%11111100        ; x  x
-    	.byte #%01111110        ; xxxx
-    	.byte #%11110011        ; x x   xx
-    	.byte #%10100011        ; xxxx  xx
-    	.byte #%11110000        ;  xxxxxx
-    	.byte #%10010000        ; xxxxxx
-    	.byte #%11011000        ; x   xx
+        .byte #%00000000        ;
+        .byte #%01101100        ;
+    	.byte #%00111000        ;   xxx
+    	.byte #%01111100        ;  xxxxx
+    	.byte #%11111110        ; x x xxx
+    	.byte #%10101110        ; xxxxxxx
+    	.byte #%01111100        ;  xxxxx
+    	.byte #%00111000        ;   xxx
+    	.byte #%00000000        ;  xx xx
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 	P1 Bitmap - Jumping
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+P1SpriteJump:
+        .byte #%00000000        ;
+        .byte #%00101000        ;   xxx
+    	.byte #%00111000        ;  xxxxx
+    	.byte #%01111100        ; xx x xx
+    	.byte #%11111110        ; xxxxxxx
+    	.byte #%11111110        ; xxxxxxx
+    	.byte #%11010110        ;  xxxxx
+    	.byte #%01111100        ;   xxx
+    	.byte #%00111000        ;   x x
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	P0 Bitmap - Color
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 P0Color:
     	.byte #$00
-    	.byte #$42
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
+    	.byte #$1E
+    	.byte #$1E
+    	.byte #$1E
+    	.byte #$1E
+    	.byte #$00
+    	.byte #$1E
+    	.byte #$1E
+    	.byte #$00
 
 P0ColorRun:
     	.byte #$00
-    	.byte #$42
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
-    	.byte #$5E
+    	.byte #$1E
+    	.byte #$1E
+    	.byte #$1E
+    	.byte #$1E
+    	.byte #$00
+    	.byte #$1E
+    	.byte #$1E
+    	.byte #$00
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	P1 Bitmap - Color
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 P1Color:
     	.byte #$00
-    	.byte #$1E
-    	.byte #$1E
-    	.byte #$1E
-    	.byte #$1E
-    	.byte #$00
-    	.byte #$1E
-    	.byte #$1E
-    	.byte #$00
+    	.byte #$42
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
 
 P1ColorRun:
     	.byte #$00
-    	.byte #$1E
-    	.byte #$1E
-    	.byte #$1E
-    	.byte #$1E
-    	.byte #$00
-    	.byte #$1E
-    	.byte #$1E
-    	.byte #$00
+    	.byte #$42
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
+    	.byte #$5E
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;      Scoreboard Digits
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Digits:
     	.byte %01110111          ; ### ###
     	.byte %01010101          ; # # # #
@@ -846,16 +930,9 @@ Digits:
 
 
 
-
-
-
-
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 	Complete ROM size with exactly 4KB
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
    	org $FFFC                ; move to position $FFFC
    	word Reset
