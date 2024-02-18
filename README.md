@@ -6,6 +6,9 @@ I've moved on to other projects.</p>
 
 # 6502 Assembly Game Project
 
+![](https://github.com/dylanafterall/assembly_8bit_game/blob/main/assets/P0P1Running.gif)
+![](https://github.com/dylanafterall/assembly_8bit_game/blob/main/assets/P1Jumping.gif)
+
 <p>This project uses code found in Gustavo Pezzi's (highly recommended) "Atari 2600 Programming with 6502 Assembly" course, found here: 
 <a href="https://pikuma.com/courses">Pikuma Courses</a></p>
 
@@ -22,7 +25,7 @@ I've moved on to other projects.</p>
 </ul>
 </p>
 
-<p>Features not implemented:
+<p>Features to be implemented:
 <ul>
     <li>Combat/Projectiles</li>
     <li>Scoreboard</li>
